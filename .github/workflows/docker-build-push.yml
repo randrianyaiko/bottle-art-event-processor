@@ -13,17 +13,35 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
+      # 1. Checkout the repository
       - name: Checkout repository
         uses: actions/checkout@v4
 
+      # 2. Set up Docker CLI debug (optional, useful for troubleshooting)
+      - name: Enable Docker debug
+        run: echo "DOCKER_CLI_DEBUG=1" >> $GITHUB_ENV
+
+      # 3. Log in to Docker Hub using the official action
       - name: Log in to Docker Hub
         uses: docker/login-action@v3
         with:
           username: ${{ secrets.DOCKER_HUB_USERNAME }}
           password: ${{ secrets.DOCKER_HUB_TOKEN }}
 
-      - name: Build and push Docker image
+      # 4. Build the Docker image
+      - name: Build Docker image
         run: |
           IMAGE_NAME=randriamihamina/n0rsxduhfn8yrh08g5e16wu5sxed13:latest
+          echo "Building Docker image: $IMAGE_NAME"
           docker build -t $IMAGE_NAME -f Dockerfile .
+
+      # 5. Push the Docker image
+      - name: Push Docker image
+        run: |
+          IMAGE_NAME=randriamihamina/n0rsxduhfn8yrh08g5e16wu5sxed13:latest
+          echo "Pushing Docker image: $IMAGE_NAME"
           docker push $IMAGE_NAME
+
+      # 6. Optional: Verify image exists locally
+      - name: Verify Docker image
+        run: docker images
