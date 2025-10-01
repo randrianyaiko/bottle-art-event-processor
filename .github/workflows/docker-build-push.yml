@@ -1,4 +1,4 @@
-name: Build, Push, and Deploy Docker Image
+name: Build and Push Docker Image
 
 on:
   push:
@@ -22,10 +22,10 @@ jobs:
       - name: Set Docker image name
         run: echo "IMAGE_NAME=${{ secrets.IMAGE_NAME }}" >> $GITHUB_ENV
 
-      # 3. Build Docker image
+      # 3. Build Docker image with :latest tag
       - name: Build Docker image
         run: |
-          echo "Building Docker image: $IMAGE_NAME"
+          echo "Building Docker image: $IMAGE_NAME:latest"
           docker build -t "$IMAGE_NAME:latest" -f Dockerfile .
 
       # 4. Tag Docker image with commit SHA
@@ -55,5 +55,6 @@ jobs:
 
           echo "Pushing Docker image: $IMAGE_NAME:latest"
           docker push "$IMAGE_NAME:latest"
+
           echo "Pushing Docker image: $IMAGE_NAME:$COMMIT_TAG"
           docker push "$IMAGE_NAME:$COMMIT_TAG"
