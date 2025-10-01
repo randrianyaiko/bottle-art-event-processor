@@ -49,9 +49,9 @@ jobs:
           EC2_PEM: ${{ secrets.EC2_PEM }}
           IMAGE_NAME: ${{ secrets.IMAGE_NAME }}
         run: |
-          # Create PEM file for SSH
+          # Create PEM file with secure permissions
           echo "$EC2_PEM" > ec2_key.pem
-          chmod 600 ec2_key.pem
+          chmod 400 ec2_key.pem
 
           # SSH into EC2 and deploy
           ssh -o StrictHostKeyChecking=no -i ec2_key.pem $EC2_USER@$EC2_HOST << 'EOF'
@@ -72,3 +72,6 @@ jobs:
             echo "Starting new container..."
             sudo docker run -d --name my_app -p 80:80 $IMAGE_NAME:$COMMIT_TAG
           EOF
+
+          # Remove PEM file after deployment
+          rm -f ec2_key.pem
