@@ -1,0 +1,14 @@
+env/
+.env
+fastembed_models/
+*.jpeg
+*.jpg
+*.png
+*.txt
+!requirements.txt
+*.pkl
+*.zip
+__pycache__/
+redis_data/
+*.ipynb
+requirements.in
