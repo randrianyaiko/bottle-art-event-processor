@@ -49,8 +49,8 @@ jobs:
           EC2_PEM: ${{ secrets.EC2_PEM }}
           IMAGE_NAME: ${{ secrets.IMAGE_NAME }}
         run: |
-          # Create PEM file with secure permissions
-          echo "$EC2_PEM" > ec2_key.pem
+          # Create PEM file with LF line endings and secure permissions
+          echo "$EC2_PEM" | tr -d '\r' > ec2_key.pem
           chmod 400 ec2_key.pem
 
           # SSH into EC2 and deploy
