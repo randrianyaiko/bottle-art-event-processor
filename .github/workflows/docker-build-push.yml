@@ -41,37 +41,27 @@ jobs:
           COMMIT_TAG=$(echo $GITHUB_SHA | cut -c1-7)
           sudo docker push "$IMAGE_NAME:$COMMIT_TAG"
 
-      - name: Deploy to EC2
-        if: github.event_name == 'push'
-        env:
-          EC2_HOST: ${{ secrets.EC2_HOST }}
-          EC2_USER: ${{ secrets.EC2_USER }}
-          EC2_PEM: ${{ secrets.EC2_PEM }}
-          IMAGE_NAME: ${{ secrets.IMAGE_NAME }}
-        run: |
-          # Create PEM file with LF line endings and secure permissions
-          echo "$EC2_PEM" | tr -d '\r' > ec2_key.pem
-          chmod 400 ec2_key.pem
-
-          # SSH into EC2 and deploy
-          ssh -o StrictHostKeyChecking=no -i ec2_key.pem $EC2_USER@$EC2_HOST << 'EOF'
+      - name: Deploy to EC2 via SSH
+        uses: appleboy/ssh-action@v0.1.8
+        with:
+          host: ${{ secrets.EC2_HOST }}
+          username: ${{ secrets.EC2_USER }}
+          key: ${{ secrets.EC2_PEM }}
+          port: 22
+          script: |
             echo "Updating system and installing Docker..."
             sudo apt-get update -y
             sudo apt-get install -y snapd
             sudo snap install docker
 
             echo "Pulling Docker images..."
-            sudo docker pull $IMAGE_NAME:latest
+            sudo docker pull ${{ secrets.IMAGE_NAME }}:latest
             COMMIT_TAG=$(echo $GITHUB_SHA | cut -c1-7)
-            sudo docker pull $IMAGE_NAME:$COMMIT_TAG || true
+            sudo docker pull ${{ secrets.IMAGE_NAME }}:$COMMIT_TAG || true
 
             echo "Stopping old container if exists..."
             sudo docker stop my_app || true
             sudo docker rm my_app || true
 
             echo "Starting new container..."
-            sudo docker run -d --name my_app -p 80:80 $IMAGE_NAME:$COMMIT_TAG
-          EOF
-
-          # Remove PEM file after deployment
-          rm -f ec2_key.pem
+            sudo docker run -d --name my_app -p 80:80 ${{ secrets.IMAGE_NAME }}:$COMMIT_TAG
