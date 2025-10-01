@@ -12,26 +12,37 @@ jobs:
   docker:
     runs-on: ubuntu-latest
     environment: B-ART-DEV
+
     steps:
       # 1. Checkout repository
       - name: Checkout repository
         uses: actions/checkout@v4
 
-      # 2. Build Docker image
+      # 2. Set Docker image name from secret
+      - name: Set Docker image name
+        run: echo "IMAGE_NAME=${{ secrets.IMAGE_NAME }}" >> $GITHUB_ENV
+
+      # 3. Build Docker image
       - name: Build Docker image
         run: |
-          IMAGE_NAME=randriamihamina/n0rsxduhfn8yrh08g5e16wu5sxed13:latest
           echo "Building Docker image: $IMAGE_NAME"
           docker build -t $IMAGE_NAME -f Dockerfile .
 
-      # 3. Push Docker image only on push events (not PRs)
+      # 4. Tag image with commit SHA (optional but recommended)
+      - name: Tag Docker image with commit SHA
+        run: |
+          COMMIT_TAG=$(echo $GITHUB_SHA | cut -c1-7)
+          docker tag $IMAGE_NAME $IMAGE_NAME:$COMMIT_TAG
+          echo "Tagged Docker image: $IMAGE_NAME:$COMMIT_TAG"
+
+      # 5. Push Docker image only on pushes
       - name: Push Docker image
         if: github.event_name == 'push'
         env:
           DOCKER_USERNAME: ${{ secrets.DOCKER_HUB_USERNAME }}
           DOCKER_PASSWORD: ${{ secrets.DOCKER_HUB_TOKEN }}
         run: |
-          # Check that secrets are available
+          # Check secrets
           if [ -z "$DOCKER_USERNAME" ] || [ -z "$DOCKER_PASSWORD" ]; then
             echo "Docker Hub secrets are missing!"
             exit 1
@@ -40,6 +51,10 @@ jobs:
           echo "Logging in to Docker Hub as $DOCKER_USERNAME"
           echo "$DOCKER_PASSWORD" | docker login -u "$DOCKER_USERNAME" --password-stdin
 
-          IMAGE_NAME=randriamihamina/n0rsxduhfn8yrh08g5e16wu5sxed13:latest
-          echo "Pushing Docker image: $IMAGE_NAME"
+          echo "Pushing latest tag: $IMAGE_NAME"
           docker push $IMAGE_NAME
+
+          # Push commit SHA tag
+          COMMIT_TAG=$(echo $GITHUB_SHA | cut -c1-7)
+          echo "Pushing commit tag: $IMAGE_NAME:$COMMIT_TAG"
+          docker push $IMAGE_NAME:$COMMIT_TAG
