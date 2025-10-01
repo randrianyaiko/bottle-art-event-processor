@@ -1,4 +1,4 @@
-name: Build and Push Docker Image
+name: Build, Push, and Deploy Docker Image
 
 on:
   push:
@@ -11,7 +11,7 @@ on:
 jobs:
   docker:
     runs-on: ubuntu-latest
-    environment: B-ART-DEV
+    environment: B-ART-DEV  # access environment secrets
 
     steps:
       # 1. Checkout repository
@@ -26,23 +26,25 @@ jobs:
       - name: Build Docker image
         run: |
           echo "Building Docker image: $IMAGE_NAME"
-          docker build -t $IMAGE_NAME -f Dockerfile .
+          docker build -t "$IMAGE_NAME:latest" -f Dockerfile .
 
-      # 4. Tag image with commit SHA (optional but recommended)
+      # 4. Tag Docker image with commit SHA
       - name: Tag Docker image with commit SHA
         run: |
           COMMIT_TAG=$(echo $GITHUB_SHA | cut -c1-7)
-          docker tag $IMAGE_NAME $IMAGE_NAME:$COMMIT_TAG
+          echo "COMMIT_TAG=$COMMIT_TAG" >> $GITHUB_ENV
+          docker tag "$IMAGE_NAME:latest" "$IMAGE_NAME:$COMMIT_TAG"
           echo "Tagged Docker image: $IMAGE_NAME:$COMMIT_TAG"
 
-      # 5. Push Docker image only on pushes
+      # 5. Push Docker image to Docker Hub (only on push)
       - name: Push Docker image
         if: github.event_name == 'push'
         env:
           DOCKER_USERNAME: ${{ secrets.DOCKER_HUB_USERNAME }}
           DOCKER_PASSWORD: ${{ secrets.DOCKER_HUB_TOKEN }}
+          IMAGE_NAME: ${{ secrets.IMAGE_NAME }}
+          COMMIT_TAG: ${{ github.sha::7 }}
         run: |
-          # Check secrets
           if [ -z "$DOCKER_USERNAME" ] || [ -z "$DOCKER_PASSWORD" ]; then
             echo "Docker Hub secrets are missing!"
             exit 1
@@ -51,10 +53,37 @@ jobs:
           echo "Logging in to Docker Hub as $DOCKER_USERNAME"
           echo "$DOCKER_PASSWORD" | docker login -u "$DOCKER_USERNAME" --password-stdin
 
-          echo "Pushing latest tag: $IMAGE_NAME"
-          docker push $IMAGE_NAME
+          echo "Pushing Docker image: $IMAGE_NAME:latest"
+          docker push "$IMAGE_NAME:latest"
+          echo "Pushing Docker image: $IMAGE_NAME:$COMMIT_TAG"
+          docker push "$IMAGE_NAME:$COMMIT_TAG"
 
-          # Push commit SHA tag
-          COMMIT_TAG=$(echo $GITHUB_SHA | cut -c1-7)
-          echo "Pushing commit tag: $IMAGE_NAME:$COMMIT_TAG"
-          docker push $IMAGE_NAME:$COMMIT_TAG
+      # 6. Deploy Docker image to EC2 (only on push)
+      - name: Deploy to EC2
+        if: github.event_name == 'push'
+        env:
+          EC2_HOST: ${{ secrets.EC2_HOST }}
+          EC2_USER: ${{ secrets.EC2_USER }}
+          EC2_SSH_KEY: ${{ secrets.EC2_SSH_KEY }}
+          IMAGE_NAME: ${{ secrets.IMAGE_NAME }}
+          COMMIT_TAG: ${{ github.sha::7 }}
+        run: |
+          echo "Setting up SSH key..."
+          mkdir -p ~/.ssh
+          echo "$EC2_SSH_KEY" > ~/.ssh/ec2_key.pem
+          chmod 600 ~/.ssh/ec2_key.pem
+
+          echo "Deploying Docker image to EC2: $EC2_HOST"
+          ssh -o StrictHostKeyChecking=no -i ~/.ssh/ec2_key.pem $EC2_USER@$EC2_HOST << EOF
+            echo "Pulling Docker image $IMAGE_NAME:$COMMIT_TAG"
+            docker pull $IMAGE_NAME:$COMMIT_TAG
+
+            echo "Stopping old container if exists..."
+            docker stop app || true
+            docker rm app || true
+
+            echo "Starting new container..."
+            docker run -d --name app -p 80:80 $IMAGE_NAME:$COMMIT_TAG
+
+            echo "Deployment complete!"
+          EOF
