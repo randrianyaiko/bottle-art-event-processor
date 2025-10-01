@@ -11,5 +11,4 @@ RUN pip install --upgrade pip && pip install --no-cache-dir -r requirements.txt
 
 # Copy all necessary files
 COPY app.py /app/
-COPY app/ /app/app/
 COPY src/ /app/src/
