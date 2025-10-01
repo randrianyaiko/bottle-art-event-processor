@@ -11,7 +11,7 @@ on:
 jobs:
   docker:
     runs-on: ubuntu-latest
-
+    environment: B-ART-DEV
     steps:
       # 1. Checkout repository
       - name: Checkout repository
