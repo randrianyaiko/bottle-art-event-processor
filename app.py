@@ -25,7 +25,7 @@ logging.basicConfig(
 TOPIC = os.getenv("KAFKA_TOPIC")
 GROUP_ID = os.getenv("KAFKA_GROUP_ID")
 LOCAL_TZ = ZoneInfo(os.getenv("TIMEZONE"))
-KAFKA_BROKERS = f"{os.getenv("KAFKA_HOST")}:{os.getenv("KAFKA_PORT")}"
+KAFKA_BROKERS = f'{os.getenv("KAFKA_HOST")}:{os.getenv("KAFKA_PORT")}'
 
 # Thread pool for parallel processing
 MAX_WORKERS = 10
