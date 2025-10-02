@@ -1,0 +1,106 @@
+name: Build, Push, and Deploy Docker Image
+
+on:
+  push:
+    branches:
+      - master
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+
+    steps:
+      # 1️⃣ Checkout the repo
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      # 2️⃣ Set Docker image name
+      - name: Set Docker image name
+        run: echo "IMAGE_NAME=${{ secrets.IMAGE_NAME }}" >> $GITHUB_ENV
+
+      # 3️⃣ Check if code changed (ignore .github folder)
+      - name: Check if code changed
+        id: code_check
+        run: |
+          if git diff --quiet HEAD~1 HEAD -- . ':!/.github'; then
+            echo "code_changed=false" >> $GITHUB_ENV
+            echo "No code changes detected. Skipping Docker build & push."
+          else
+            echo "code_changed=true" >> $GITHUB_ENV
+            echo "Code changes detected. Docker build & push will run."
+          fi
+
+      # 4️⃣ Build Docker image (only if code changed)
+      - name: Build Docker image
+        if: env.code_changed == 'true'
+        run: |
+          docker build -t "$IMAGE_NAME:latest" -f Dockerfile .
+
+      # 5️⃣ Tag Docker image with commit SHA (only if code changed)
+      - name: Tag Docker image with commit SHA
+        if: env.code_changed == 'true'
+        run: |
+          COMMIT_TAG=$(echo $GITHUB_SHA | cut -c1-7)
+          docker tag "$IMAGE_NAME:latest" "$IMAGE_NAME:$COMMIT_TAG"
+
+      # 6️⃣ Push Docker image to Docker Hub (only if code changed)
+      - name: Push Docker image
+        if: env.code_changed == 'true'
+        env:
+          DOCKER_USERNAME: ${{ secrets.DOCKER_HUB_USERNAME }}
+          DOCKER_PASSWORD: ${{ secrets.DOCKER_HUB_TOKEN }}
+          IMAGE_NAME: ${{ secrets.IMAGE_NAME }}
+        run: |
+          echo "$DOCKER_PASSWORD" | docker login -u "$DOCKER_USERNAME" --password-stdin
+          docker push "$IMAGE_NAME:latest"
+          COMMIT_TAG=$(echo $GITHUB_SHA | cut -c1-7)
+          docker push "$IMAGE_NAME:$COMMIT_TAG"
+
+      # 7️⃣ Generate .env from single secret
+      - name: Generate .env from DOTENV secret
+        env:
+          DOTENV: ${{ secrets.DOTENV }}
+        run: |
+          printf '%s\n' "$DOTENV" > .env
+
+      # 8️⃣ Copy project files to EC2
+      - name: Copy project files to EC2
+        uses: appleboy/scp-action@v0.1.2
+        with:
+          host: ${{ secrets.EC2_HOST }}
+          username: ${{ secrets.EC2_USER }}
+          key: ${{ secrets.EC2_SSH_KEY }}
+          port: 22
+          source: |
+            docker-compose-prod.yml
+            .env
+          target: /home/ubuntu/app/
+
+      # 9️⃣ Deploy on EC2 via SSH
+      - name: Deploy to EC2
+        uses: appleboy/ssh-action@v0.1.8
+        with:
+          host: ${{ secrets.EC2_HOST }}
+          username: ${{ secrets.EC2_USER }}
+          key: ${{ secrets.EC2_SSH_KEY }}
+          port: 22
+          script: |
+            set -e
+            APP_DIR="/home/ubuntu/app"
+            cd $APP_DIR
+
+            echo "Installing Docker & Compose if missing..."
+            if ! command -v docker &> /dev/null; then
+              sudo apt-get update -y
+              sudo apt-get install -y apt-transport-https ca-certificates curl software-properties-common
+              curl -fsSL https://download.docker.com/linux/ubuntu/gpg | sudo apt-key add -
+              sudo add-apt-repository \
+                "deb [arch=amd64] https://download.docker.com/linux/ubuntu $(lsb_release -cs) stable"
+              sudo apt-get update -y
+              sudo apt-get install -y docker-ce docker-ce-cli containerd.io docker-compose-plugin
+              sudo usermod -aG docker $USER
+            fi
+
+            echo "Pulling Docker images and restarting containers..."
+            docker compose -f docker-compose-prod.yml pull
+            docker compose -f docker-compose-prod.yml up -d --force-recreate
