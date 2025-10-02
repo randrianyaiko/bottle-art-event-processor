@@ -10,7 +10,7 @@ import numpy as np
 load_dotenv()
 MODEL_NAME = os.getenv('FASTEMBED_MODEL_NAME')
 CACHE_DIR = os.getenv('FASTEMBED_CACHE_DIR')
-embedder = ImageEmbedding(MODEL_NAME, cache_dir=CACHE_DIR)
+embedder = ImageEmbedding(MODEL_NAME, cache_dir=CACHE_DIR,lazy_load=True)
 
 def embed_image(url: str) -> list:
     """Download an image from a URL and return its embedding as float16."""

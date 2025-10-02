@@ -5,10 +5,11 @@ services:
     image: confluentinc/cp-kafka:7.8.3
     container_name: kafka
     ports:
-      - "9094:9094"   # external (host/EC2 access)
-      - "9093:9093"   # controller listener port
+      - "9094:9094"
+      - "9093:9093"
     environment:
-      KAFKA_HEAP_OPTS: "-Xms256M -Xmx256M"
+      # Limit JVM heap to reduce memory usage
+      KAFKA_HEAP_OPTS: "-Xms128M -Xmx128M"
       KAFKA_KRAFT_MODE: 'true'
       CLUSTER_ID: '1L6g7nGhU-eAKfL--X25wo'
       KAFKA_NODE_ID: 1
@@ -18,7 +19,7 @@ services:
 
       # Listeners
       KAFKA_LISTENERS: INTERNAL://0.0.0.0:9092,EXTERNAL://0.0.0.0:9094,CONTROLLER://0.0.0.0:9093
-      KAFKA_ADVERTISED_LISTENERS: INTERNAL://kafka:9092,EXTERNAL://{EC2_IP}:9094
+      KAFKA_ADVERTISED_LISTENERS: INTERNAL://kafka:9092,EXTERNAL://${EC2_IP}:9094
       KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: INTERNAL:PLAINTEXT,EXTERNAL:PLAINTEXT,CONTROLLER:PLAINTEXT
       KAFKA_INTER_BROKER_LISTENER_NAME: INTERNAL
       KAFKA_CONTROLLER_LISTENER_NAMES: CONTROLLER
@@ -40,9 +41,16 @@ services:
       timeout: 5s
       retries: 10
 
+    deploy:
+      resources:
+        limits:
+          memory: 256M
+        reservations:
+          memory: 128M
+
   redis:
     image: redis:8.2
-    command: redis-server --requirepass ${REDIS_PASSWORD}
+    command: redis-server --requirepass ${REDIS_PASSWORD} --maxmemory 128mb --maxmemory-policy allkeys-lru
     container_name: redis
     restart: unless-stopped
     networks:
@@ -51,12 +59,12 @@ services:
           - redis
     volumes:
       - redis_data:/data
-    mem_limit: 256M
+    mem_limit: 128M
     logging:
       driver: "json-file"
       options:
-        max-size: "10m"
-        max-file: "3"
+        max-size: "5m"
+        max-file: "2"
     ports:
       - "6379:6379"
 
@@ -80,6 +88,12 @@ services:
       FASTEMBED_MODEL_NAME: ${FASTEMBED_MODEL_NAME}
     volumes:
       - fastembed_cache:/cache
+    deploy:
+      resources:
+        limits:
+          memory: 256M
+        reservations:
+          memory: 128M
 
 volumes:
   kafka_data:
