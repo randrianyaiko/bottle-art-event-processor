@@ -9,12 +9,25 @@ jobs:
   deploy:
     runs-on: ubuntu-latest
     environment: B-ART-DEV
+
     steps:
       # 1️⃣ Checkout the repo
       - name: Checkout repository
         uses: actions/checkout@v4
 
-      # 2️⃣ Build Docker image
+      # 2️⃣ Validate secrets
+      - name: Validate required secrets
+        run: |
+          if [ -z "${{ secrets.IMAGE_NAME }}" ]; then
+            echo "ERROR: IMAGE_NAME secret is not set!"
+            exit 1
+          fi
+          if [ -z "${{ secrets.DOTENV }}" ]; then
+            echo "ERROR: DOTENV secret is not set!"
+            exit 1
+          fi
+
+      # 3️⃣ Build Docker image
       - name: Build Docker image
         env:
           IMAGE_NAME: ${{ secrets.IMAGE_NAME }}
@@ -22,7 +35,7 @@ jobs:
           echo "Building Docker image $IMAGE_NAME:latest"
           docker build -t "$IMAGE_NAME:latest" -f Dockerfile .
 
-      # 3️⃣ Tag Docker image with commit SHA
+      # 4️⃣ Tag Docker image with commit SHA
       - name: Tag Docker image with commit SHA
         env:
           IMAGE_NAME: ${{ secrets.IMAGE_NAME }}
@@ -30,7 +43,7 @@ jobs:
           COMMIT_TAG=$(echo $GITHUB_SHA | cut -c1-7)
           docker tag "$IMAGE_NAME:latest" "$IMAGE_NAME:$COMMIT_TAG"
 
-      # 4️⃣ Push Docker image to Docker Hub
+      # 5️⃣ Push Docker image to Docker Hub
       - name: Push Docker image
         env:
           DOCKER_USERNAME: ${{ secrets.DOCKER_HUB_USERNAME }}
@@ -42,14 +55,21 @@ jobs:
           COMMIT_TAG=$(echo $GITHUB_SHA | cut -c1-7)
           docker push "$IMAGE_NAME:$COMMIT_TAG"
 
-      # 5️⃣ Generate .env from DOTENV secret
+      # 6️⃣ Generate .env from DOTENV secret
       - name: Generate .env from DOTENV secret
         env:
           DOTENV: ${{ secrets.DOTENV }}
         run: |
           printf '%s\n' "$DOTENV" > .env
+          echo ".env file created with size $(stat -c%s .env) bytes"
 
-      # 6️⃣ Copy project files to EC2
+      # 7️⃣ Debug: List files to be copied
+      - name: List files before SCP
+        run: |
+          echo "Listing files to copy:"
+          ls -la docker-compose-prod.yml .env
+
+      # 8️⃣ Copy project files to EC2
       - name: Copy project files to EC2
         uses: appleboy/scp-action@v0.1.2
         with:
@@ -61,9 +81,10 @@ jobs:
             docker-compose-prod.yml
             .env
           target: /home/ubuntu/app/
+          rm: false
+          overwrite: true
 
-
-      # 7️⃣ Deploy on EC2 via SSH
+      # 9️⃣ Deploy on EC2 via SSH
       - name: Deploy to EC2
         uses: appleboy/ssh-action@v0.1.8
         with:
