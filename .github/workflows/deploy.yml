@@ -8,7 +8,7 @@ on:
 jobs:
   deploy:
     runs-on: ubuntu-latest
-
+    environment: B-ART-DEV
     steps:
       # 1️⃣ Checkout the repo
       - name: Checkout repository
