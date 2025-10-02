@@ -8,6 +8,7 @@ services:
       - "9094:9094"   # external (host/EC2 access)
       - "9093:9093"   # controller listener port
     environment:
+      KAFKA_HEAP_OPTS: "-Xms256M -Xmx256M"
       KAFKA_KRAFT_MODE: 'true'
       CLUSTER_ID: '1L6g7nGhU-eAKfL--X25wo'
       KAFKA_NODE_ID: 1
