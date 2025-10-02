@@ -11,11 +11,11 @@ jobs:
     environment: B-ART-DEV
 
     steps:
-      # 1️⃣ Checkout the repo
+      # 1️⃣ Checkout the repository
       - name: Checkout repository
         uses: actions/checkout@v4
 
-      # 2️⃣ Validate secrets
+      # 2️⃣ Validate required secrets
       - name: Validate required secrets
         run: |
           if [ -z "${{ secrets.IMAGE_NAME }}" ]; then
@@ -71,18 +71,14 @@ jobs:
 
       # 8️⃣ Copy project files to EC2
       - name: Copy project files to EC2
-        uses: appleboy/scp-action@v0.1.2
+        uses: appleboy/scp-action@v0.1.7
         with:
           host: ${{ secrets.EC2_HOST }}
           username: ${{ secrets.EC2_USER }}
           key: ${{ secrets.EC2_SSH_KEY }}
           port: 22
-          source: |
-            docker-compose-prod.yml
-            .env
-          target: /home/ubuntu/app/
-          rm: false
-          overwrite: true
+          source: "docker-compose-prod.yml,.env"
+          target: "/home/ubuntu/app/"
 
       # 9️⃣ Deploy on EC2 via SSH
       - name: Deploy to EC2
