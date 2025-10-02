@@ -22,12 +22,12 @@ jobs:
 
       - name: Build Docker image
         run: |
-          sudo docker build -t "$IMAGE_NAME:latest" -f Dockerfile .
+          docker build -t "$IMAGE_NAME:latest" -f Dockerfile .
 
       - name: Tag Docker image with commit SHA
         run: |
           COMMIT_TAG=$(echo $GITHUB_SHA | cut -c1-7)
-          sudo docker tag "$IMAGE_NAME:latest" "$IMAGE_NAME:$COMMIT_TAG"
+          docker tag "$IMAGE_NAME:latest" "$IMAGE_NAME:$COMMIT_TAG"
 
       - name: Push Docker image
         if: github.event_name == 'push'
@@ -36,25 +36,36 @@ jobs:
           DOCKER_PASSWORD: ${{ secrets.DOCKER_HUB_TOKEN }}
           IMAGE_NAME: ${{ secrets.IMAGE_NAME }}
         run: |
-          echo "$DOCKER_PASSWORD" | sudo docker login -u "$DOCKER_USERNAME" --password-stdin
-          sudo docker push "$IMAGE_NAME:latest"
+          echo "$DOCKER_PASSWORD" | docker login -u "$DOCKER_USERNAME" --password-stdin
+          docker push "$IMAGE_NAME:latest"
           COMMIT_TAG=$(echo $GITHUB_SHA | cut -c1-7)
-          sudo docker push "$IMAGE_NAME:$COMMIT_TAG"
+          docker push "$IMAGE_NAME:$COMMIT_TAG"
 
       - name: Deploy to EC2 via SSH
         uses: appleboy/ssh-action@v0.1.8
         with:
           host: ${{ secrets.EC2_HOST }}
-          username: ${{ secrets.EC2_USER }}
-          key: ${{ secrets.EC2_PEM }}
+          username: ${{ secrets.EC2_USER }}     # likely "ubuntu"
+          key: ${{ secrets.EC2_SSH_KEY }}       # your private key
           port: 22
           script: |
-            echo "Updating system and installing Docker..."
-            sudo apt-get update -y
-            sudo apt-get install -y snapd
-            sudo snap install docker
+            echo "Checking Docker installation..."
+            if ! command -v docker &> /dev/null
+            then
+              echo "Installing Docker..."
+              sudo apt-get update -y
+              sudo apt-get install -y apt-transport-https ca-certificates curl software-properties-common
+              curl -fsSL https://download.docker.com/linux/ubuntu/gpg | sudo apt-key add -
+              sudo add-apt-repository \
+                "deb [arch=amd64] https://download.docker.com/linux/ubuntu \
+                $(lsb_release -cs) \
+                stable"
+              sudo apt-get update -y
+              sudo apt-get install -y docker-ce docker-ce-cli containerd.io
+              sudo usermod -aG docker $USER
+            fi
 
-            echo "Pulling Docker images..."
+            echo "Pulling latest Docker images..."
             sudo docker pull ${{ secrets.IMAGE_NAME }}:latest
             COMMIT_TAG=$(echo $GITHUB_SHA | cut -c1-7)
             sudo docker pull ${{ secrets.IMAGE_NAME }}:$COMMIT_TAG || true
