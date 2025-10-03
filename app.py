@@ -1,7 +1,7 @@
 from kafka import KafkaConsumer
 from kafka.errors import NoBrokersAvailable
 import json
-from concurrent.futures import ThreadPoolExecutor
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from dateutil import parser
 from zoneinfo import ZoneInfo
 from dotenv import load_dotenv
@@ -16,8 +16,9 @@ from src.event_processor.processor import event_handler
 load_dotenv()
 
 # Logging setup
+LOG_LEVEL = logging.DEBUG if os.getenv("DEBUG") == "1" else logging.INFO
 logging.basicConfig(
-    level=logging.INFO,
+    level=LOG_LEVEL,
     format="%(asctime)s [%(levelname)s] %(message)s"
 )
 
@@ -27,14 +28,14 @@ GROUP_ID = os.getenv("KAFKA_GROUP_ID")
 LOCAL_TZ = ZoneInfo(os.getenv("TIMEZONE"))
 KAFKA_BROKERS = f'{os.getenv("KAFKA_HOST")}:{os.getenv("KAFKA_PORT")}'
 
-# Thread pool for parallel processing
-MAX_WORKERS = 10
+# Thread pool for parallel processing (adaptive)
+CPU_COUNT = os.cpu_count() or 1
+MAX_WORKERS = min(4, CPU_COUNT * 2)  # lightweight on t2.micro, scales up on bigger servers
 executor = ThreadPoolExecutor(max_workers=MAX_WORKERS)
 
-# Retry settings for event handling
-MAX_EVENT_RETRIES = os.getenv("MAX_EVENT_RETRIES",10)
-RETRY_DELAY = os.getenv("RETRY_DELAY", 3)
-
+# Retry settings
+MAX_EVENT_RETRIES = int(os.getenv("MAX_EVENT_RETRIES", 3))
+RETRY_DELAY = int(os.getenv("RETRY_DELAY", 3))
 
 # -------------------------
 # Helpers
@@ -60,13 +61,14 @@ def process_event_with_retries(event: dict) -> None:
     for attempt in range(1, MAX_EVENT_RETRIES + 1):
         try:
             event_handler(event)
-            logging.info(f"Event processed successfully on attempt {attempt}")
+            logging.debug(f"Event processed successfully on attempt {attempt}")
             return
         except Exception as e:
             logging.error(
                 f"Event processing failed (attempt {attempt}/{MAX_EVENT_RETRIES}): {e}"
             )
-            time.sleep(RETRY_DELAY)
+            if attempt < MAX_EVENT_RETRIES:
+                time.sleep(RETRY_DELAY)
 
     logging.error(f"Event permanently failed after {MAX_EVENT_RETRIES} retries. Skipping.")
 
@@ -82,6 +84,7 @@ def wait_for_kafka_connection():
                 auto_offset_reset="earliest",
                 enable_auto_commit=True,
                 value_deserializer=lambda m: json.loads(m.decode("utf-8")),
+                max_poll_records=MAX_WORKERS,  # prevent overload
             )
             logging.info("Kafka consumer connected!")
             return consumer
@@ -103,21 +106,20 @@ def main():
     try:
         for msg in consumer:
             try:
-                logging.info(f"Received event: {msg.value}")
                 event = normalize_event(msg.value)
+                logging.debug(f"Received event: {event}")
 
-                # Submit event processing to thread pool with retry logic
-                future = executor.submit(process_event_with_retries, event)
-                futures.append(future)
+                # Submit event processing
+                futures.append(executor.submit(process_event_with_retries, event))
 
-                # Clean up completed futures to avoid memory growth
-                if len(futures) >= MAX_WORKERS:
-                    futures = [f for f in futures if not f.done()]
-                    for f in futures:
-                        try:
-                            f.result()
-                        except Exception as e:
-                            logging.error(f"Thread execution error: {e}")
+                # Drain finished futures immediately (avoid memory bloat)
+                for f in as_completed(futures, timeout=0):
+                    try:
+                        f.result()
+                    except Exception as e:
+                        logging.error(f"Thread execution error: {e}")
+                    finally:
+                        futures.remove(f)
 
             except Exception as e:
                 logging.error(f"Failed to handle Kafka message: {e}")

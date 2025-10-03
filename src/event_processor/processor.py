@@ -4,11 +4,8 @@ from datetime import datetime
 from concurrent.futures import ThreadPoolExecutor
 from queue import Queue
 from typing import Dict, List, Optional
-from scipy.stats import zscore
 
-from src.vectorcache.products import ProductEmbeddingCache
 from src.featurestore.featurestore import InteractionCache
-from src.image_embedder.embedder import embed_image
 from src.vectorstore.vectorstore import QdrantDenseClient 
 from dotenv import load_dotenv
 import os
@@ -16,7 +13,6 @@ import os
 load_dotenv()
 # ------------------- Services -------------------
 store = QdrantDenseClient()
-cachedvectors = ProductEmbeddingCache()
 featurestore = InteractionCache()
 
 # ------------------- Config -------------------
@@ -39,9 +35,6 @@ def get_user_lock(user_id: str) -> threading.Lock:
     if user_id not in user_locks:
         user_locks[user_id] = threading.Lock()
     return user_locks[user_id]
-
-# ------------------- ThreadPool for async image embedding -------------------
-IMAGE_EXECUTOR = ThreadPoolExecutor(max_workers=5)
 
 # ------------------- Helper: update EMA -------------------
 def update_interaction(user_id: str, product_id: str, event_type: str) -> None:
@@ -88,29 +81,14 @@ def update_interaction(user_id: str, product_id: str, event_type: str) -> None:
             "timestamp": datetime.utcnow().isoformat()
         })
 
-# ------------------- Product creation -------------------
-def create_product(event: dict):
-    product_id = event["product_id"]
-    image_url = event["details"]["image"]
-
-    def task():
-        embedding = embed_image(image_url)
-        store.insert_point(point_id=product_id, dense_vector=embedding)
-        cachedvectors.store({"id": product_id, "vectors": embedding})
-        print(f"[INFO] Stored product {product_id} in Qdrant")
-    IMAGE_EXECUTOR.submit(task)
 
 # ------------------- Event handler -------------------
 def event_handler(event: dict):
     activity_type = event.get("activity_type")
     user_id = event.get("user_id")
     product_id = event.get("product_id")
-
-    if activity_type == "CREATE_PRODUCT":
-        create_product(event)
-    elif activity_type in EVENT_WEIGHTS and user_id and product_id:
+    if activity_type in EVENT_WEIGHTS and user_id and product_id:
         update_interaction(user_id, product_id, activity_type)
-
 # ------------------- Get user preferences -------------------
 def get_user_preferences(user_id: str) -> Dict[str, List[str]]:
     return user_pref_cache.get(user_id, {"liked": [], "disliked": []})
